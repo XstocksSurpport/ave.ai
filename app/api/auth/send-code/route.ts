@@ -1,16 +1,30 @@
+import { randomInt } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
-  canSendOtp,
-  clearOtp,
-  createOtp,
-  normalizeEmail,
-  recordOtpSent,
-} from "@/lib/otp";
+  OTP_COOKIE_NAME,
+  sealOtpPayload,
+} from "@/lib/otp-cookie";
+import { canSendOtp, normalizeEmail, recordOtpSent } from "@/lib/otp";
 import { sendVerificationEmail } from "@/lib/send-verification-email";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function authSecret() {
+  return process.env.AUTH_SECRET?.trim() || process.env.NEXTAUTH_SECRET?.trim() || "";
+}
+
 export async function POST(req: Request) {
+  const secret = authSecret();
+  if (!secret) {
+    return NextResponse.json(
+      {
+        error:
+          "服务器未配置 AUTH_SECRET，无法使用邮箱验证码。请在部署平台（如 Vercel）环境变量中设置 AUTH_SECRET，可本地执行 npx auth secret 生成。",
+      },
+      { status: 500 },
+    );
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -39,28 +53,41 @@ export async function POST(req: Request) {
     );
   }
 
-  const code = createOtp(normalized);
+  const code = String(randomInt(100000, 999999));
   try {
     await sendVerificationEmail(normalized, code);
   } catch (e) {
-    clearOtp(normalized);
     const message = e instanceof Error ? e.message : "邮件发送失败";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
   recordOtpSent(normalized);
 
+  const sealed = sealOtpPayload(
+    { e: normalized, c: code, x: Date.now() + 10 * 60 * 1000 },
+    secret,
+  );
+
   const devMode =
     process.env.NODE_ENV === "development" && !process.env.RESEND_API_KEY;
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     ok: true as const,
     ...(devMode
       ? {
           devMode: true as const,
-          /** 仅本地开发、且未配置 RESEND 时返回，便于调试（生产构建不会返回） */
           devCode: code,
         }
       : {}),
   });
+
+  res.cookies.set(OTP_COOKIE_NAME, sealed, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
+
+  return res;
 }

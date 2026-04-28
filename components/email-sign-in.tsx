@@ -33,6 +33,7 @@ export function EmailSignIn() {
       const res = await fetch("/api/auth/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ email: trimmed }),
       });
       const data = (await res.json()) as {
@@ -158,6 +159,13 @@ export function EmailSignIn() {
           收不到验证码？常见原因
         </summary>
         <ul className="mt-2 list-inside list-disc space-y-1.5 border-t border-slate-100 pt-2">
+          <li>
+            <strong>线上部署</strong>：必须在平台（如 Vercel）环境变量中配置{" "}
+            <code className="rounded bg-slate-100 px-1">AUTH_SECRET</code> 与{" "}
+            <code className="rounded bg-slate-100 px-1">AUTH_URL</code>（你的站点完整 https
+            地址），否则会出现登录/session 500、退出无效等问题。可用 <code className="rounded bg-slate-100 px-1">npx auth secret</code>{" "}
+            生成密钥。
+          </li>
           <li>
             <strong>本地开发</strong>：若未在 <code className="rounded bg-slate-100 px-1">.env.local</code>{" "}
             配置 <code className="rounded bg-slate-100 px-1">RESEND_API_KEY</code>

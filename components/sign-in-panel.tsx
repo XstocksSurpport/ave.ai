@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrandLogo } from "@/components/brand-logo";
 import { EmailSignIn } from "@/components/email-sign-in";
 
@@ -9,6 +9,24 @@ type Tab = "google" | "email";
 
 export function SignInPanel() {
   const [tab, setTab] = useState<Tab>("google");
+  const [providerIds, setProviderIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/providers", { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((data: Record<string, unknown>) => {
+        setProviderIds(Object.keys(data ?? {}));
+      })
+      .catch(() => setProviderIds([]));
+  }, []);
+
+  const hasGoogle = providerIds?.includes("google") ?? false;
+
+  useEffect(() => {
+    if (providerIds && !hasGoogle) {
+      setTab("email");
+    }
+  }, [providerIds, hasGoogle]);
 
   return (
     <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-8 rounded-2xl border border-slate-200 bg-white px-8 py-12 shadow-sm">
@@ -23,32 +41,38 @@ export function SignInPanel() {
           热门搜索（Trending）申请
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-slate-600">
-          请使用 Google 或邮箱验证码登录后再填写申请表。平台将按申请顺序及合约安全性审核。
+          {hasGoogle
+            ? "请使用 Google 或邮箱验证码登录后再填写申请表。平台将按申请顺序及合约安全性审核。"
+            : "请使用邮箱验证码登录后再填写申请表。平台将按申请顺序及合约安全性审核。"}
         </p>
       </div>
 
-      <div className="flex w-full max-w-xs rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm font-medium">
-        <button
-          type="button"
-          onClick={() => setTab("google")}
-          className={`flex-1 rounded-md py-2 transition ${
-            tab === "google" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
-          }`}
-        >
-          Google
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("email")}
-          className={`flex-1 rounded-md py-2 transition ${
-            tab === "email" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
-          }`}
-        >
-          邮箱验证码
-        </button>
-      </div>
+      {providerIds === null ? (
+        <p className="text-sm text-slate-500">正在准备登录…</p>
+      ) : hasGoogle ? (
+        <div className="flex w-full max-w-xs rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm font-medium">
+          <button
+            type="button"
+            onClick={() => setTab("google")}
+            className={`flex-1 rounded-md py-2 transition ${
+              tab === "google" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
+            }`}
+          >
+            Google
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("email")}
+            className={`flex-1 rounded-md py-2 transition ${
+              tab === "email" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"
+            }`}
+          >
+            邮箱验证码
+          </button>
+        </div>
+      ) : null}
 
-      {tab === "google" ? (
+      {providerIds !== null && hasGoogle && tab === "google" ? (
         <button
           type="button"
           onClick={() => signIn("google", { callbackUrl: "/" })}
@@ -74,9 +98,9 @@ export function SignInPanel() {
           </svg>
           使用 Google 登录
         </button>
-      ) : (
+      ) : providerIds !== null ? (
         <EmailSignIn />
-      )}
+      ) : null}
 
       <p className="text-center text-xs text-slate-500">
         登录即表示您同意仅将账号用于本申请流程的身份校验。

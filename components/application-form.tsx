@@ -49,6 +49,7 @@ export function ApplicationForm({ session }: { session: Session }) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentPhase, setPaymentPhase] = useState<PaymentPhase>("link");
   const [addressRevealed, setAddressRevealed] = useState(false);
+  const [paymentNotice, setPaymentNotice] = useState<string | null>(null);
 
   const user = session.user;
 
@@ -69,6 +70,12 @@ export function ApplicationForm({ session }: { session: Session }) {
       clearTimeout(t2);
     };
   }, [paymentModalOpen, addressRevealed]);
+
+  useEffect(() => {
+    if (!paymentNotice) return;
+    const timer = setTimeout(() => setPaymentNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [paymentNotice]);
 
   const copyPaymentAddress = useCallback(async () => {
     try {
@@ -402,18 +409,24 @@ export function ApplicationForm({ session }: { session: Session }) {
               type="button"
               onClick={() => {
                 if (!plan) {
-                  setMessage({
-                    type: "err",
-                    text: "请先在第二部分中选择热搜服务方案（A、B 或 C），再获取收款地址。",
-                  });
+                  setPaymentNotice("请先在第二部分中选择热搜服务方案（A、B 或 C），再获取收款地址。");
                   return;
                 }
+                setPaymentNotice(null);
                 setPaymentModalOpen(true);
               }}
               className="mt-4 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500"
             >
               获取收款地址
             </button>
+            {paymentNotice && (
+              <p
+                role="alert"
+                className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-left text-sm font-semibold text-red-800 shadow-sm ring-1 ring-red-200"
+              >
+                {paymentNotice}
+              </p>
+            )}
           </div>
         </section>
 

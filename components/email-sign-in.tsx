@@ -154,32 +154,6 @@ export function EmailSignIn() {
       )}
       {hint && <p className="text-xs text-emerald-800">{hint}</p>}
       {error && <p className="text-xs text-red-600">{error}</p>}
-      <details className="text-left text-xs text-slate-500">
-        <summary className="cursor-pointer text-slate-600 hover:text-slate-800">
-          收不到验证码？常见原因
-        </summary>
-        <ul className="mt-2 list-inside list-disc space-y-1.5 border-t border-slate-100 pt-2">
-          <li>
-            <strong>线上部署</strong>：必须在平台（如 Vercel）环境变量中配置{" "}
-            <code className="rounded bg-slate-100 px-1">AUTH_SECRET</code> 与{" "}
-            <code className="rounded bg-slate-100 px-1">AUTH_URL</code>（你的站点完整 https
-            地址），否则会出现登录/session 500、退出无效等问题。可用 <code className="rounded bg-slate-100 px-1">npx auth secret</code>{" "}
-            生成密钥。
-          </li>
-          <li>
-            <strong>本地开发</strong>：若未在 <code className="rounded bg-slate-100 px-1">.env.local</code>{" "}
-            配置 <code className="rounded bg-slate-100 px-1">RESEND_API_KEY</code>
-            ，不会发真实邮件；验证码会显示在页面上方（仅开发环境）。
-          </li>
-          <li>
-            <strong>已配置 Resend</strong>：使用默认发件人{" "}
-            <code className="rounded bg-slate-100 px-1">onboarding@resend.dev</code> 时，收件邮箱必须与
-            Resend 账号注册邮箱一致；要给任意邮箱发信，需在 Resend 验证自有域名并设置{" "}
-            <code className="rounded bg-slate-100 px-1">AUTH_EMAIL_FROM</code>。
-          </li>
-          <li>检查垃圾箱、推广邮件；企业邮箱可能拦截外部发件，需联系管理员放行。</li>
-        </ul>
-      </details>
     </div>
   );
 }

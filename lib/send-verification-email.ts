@@ -1,4 +1,34 @@
 /**
+ * Resend 要求 from 为 `email@domain` 或 `Display Name <email@domain>`（尖括号为半角）。
+ * 常见错误：环境变量带首尾引号、全角括号、Name 与 < 之间缺空格。
+ */
+const DEFAULT_FROM = "Ave <onboarding@resend.dev>";
+
+function isLikelyEmail(local: string): boolean {
+  const t = local.trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
+
+function normalizeResendFrom(raw: string | undefined): string {
+  if (!raw?.trim()) return DEFAULT_FROM;
+  let s = raw.trim();
+  s = s.replace(/^[\uFEFF\u200B]+|[\uFEFF\u200B]+$/g, "");
+  s = s.replace(/^["']+|["']+$/g, "");
+  s = s.replace(/＜/g, "<").replace(/＞/g, ">");
+
+  if (isLikelyEmail(s)) return s.trim();
+
+  const m = s.match(/^(.+?)\s*<\s*([^>]+)\s*>$/);
+  if (m) {
+    const name = m[1].trim();
+    const email = m[2].trim();
+    if (name && isLikelyEmail(email)) return `${name} <${email}>`;
+  }
+
+  return DEFAULT_FROM;
+}
+
+/**
  * 发送登录验证码邮件。
  * 生产环境需配置 RESEND_API_KEY（及可选 AUTH_EMAIL_FROM）。
  * 开发环境未配置密钥时仅打印到服务端控制台。
@@ -13,8 +43,7 @@ export async function sendVerificationEmail(to: string, code: string) {
   `;
 
   const apiKey = process.env.RESEND_API_KEY;
-  const from =
-    process.env.AUTH_EMAIL_FROM?.trim() || "Ave <onboarding@resend.dev>";
+  const from = normalizeResendFrom(process.env.AUTH_EMAIL_FROM);
 
   if (!apiKey) {
     if (process.env.NODE_ENV === "development") {
@@ -55,6 +84,15 @@ export async function sendVerificationEmail(to: string, code: string) {
     ) {
       throw new Error(
         "Resend 测试限制：使用默认发件人 onboarding@resend.dev 时，收件人只能是您在 Resend 注册账号时所用的邮箱。若要给任意邮箱发验证码，请在 Resend 控制台「Domains」添加并验证您自己的域名，然后将环境变量 AUTH_EMAIL_FROM 设为该域名下的地址（例如 Ave <noreply@你的域名.com>）。",
+      );
+    }
+
+    if (
+      res.status === 422 &&
+      /Invalid `from` field|invalid.*from/i.test(apiMessage)
+    ) {
+      throw new Error(
+        "发件人格式不被 Resend 接受。请在 Vercel 里把 AUTH_EMAIL_FROM 改成纯邮箱（如 noreply@你的域名.com）或带显示名：Ave <noreply@你的域名.com>（使用半角尖括号 <>，不要给整段加英文引号）。",
       );
     }
 

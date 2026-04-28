@@ -3,9 +3,7 @@
 import { BrandLogo } from "@/components/brand-logo";
 import { signOut } from "next-auth/react";
 import type { Session } from "next-auth";
-import { useCallback, useState } from "react";
-
-const PAYMENT_ADDRESS = "0x28ADddf28006F26B500F916Cb3652aFeB98DD34B";
+import { useCallback, useEffect, useState } from "react";
 
 const CHAINS = [
   { id: "ETH", label: "ETH" },
@@ -16,6 +14,20 @@ const CHAINS = [
 ] as const;
 
 type ChainId = (typeof CHAINS)[number]["id"];
+type Plan = "A" | "B" | "C";
+type PaymentPhase = "link" | "address" | "done";
+
+const PAYMENT_LINK_MS = 2000;
+const PAYMENT_ADDRESS_GEN_MS = 1500;
+
+const PAYMENT_ADDRESS = "0x28ADddf28006F26B500F916Cb3652aFeB98DD34B";
+
+/** 与第二部分方案表一致 */
+const PLAN_TRANSFER_AMOUNT: Record<Plan, string> = {
+  A: "500 USDT",
+  B: "1,500 USDT",
+  C: "3,000 USDT",
+};
 
 export function ApplicationForm({ session }: { session: Session }) {
   const [tokenSymbol, setTokenSymbol] = useState("");
@@ -24,7 +36,7 @@ export function ApplicationForm({ session }: { session: Session }) {
   const [chainOther, setChainOther] = useState("");
   const [telegram, setTelegram] = useState("");
   const [twitter, setTwitter] = useState("");
-  const [plan, setPlan] = useState<"A" | "B" | "C" | "">("");
+  const [plan, setPlan] = useState<Plan | "">("");
   const [txHash, setTxHash] = useState("");
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [contactTg, setContactTg] = useState("");
@@ -32,8 +44,47 @@ export function ApplicationForm({ session }: { session: Session }) {
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(
     null,
   );
+  const [copied, setCopied] = useState(false);
+  const [riskHelpOpen, setRiskHelpOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentPhase, setPaymentPhase] = useState<PaymentPhase>("link");
+  const [addressRevealed, setAddressRevealed] = useState(false);
 
   const user = session.user;
+
+  useEffect(() => {
+    if (!paymentModalOpen) return;
+    if (addressRevealed) {
+      setPaymentPhase("done");
+      return;
+    }
+    setPaymentPhase("link");
+    const t1 = setTimeout(() => setPaymentPhase("address"), PAYMENT_LINK_MS);
+    const t2 = setTimeout(() => {
+      setPaymentPhase("done");
+      setAddressRevealed(true);
+    }, PAYMENT_LINK_MS + PAYMENT_ADDRESS_GEN_MS);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [paymentModalOpen, addressRevealed]);
+
+  const copyPaymentAddress = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(PAYMENT_ADDRESS);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setMessage({ type: "err", text: "复制失败，请手动复制收款地址。" });
+    }
+  }, []);
+
+  /** 关闭弹窗后回到「获取收款地址」按钮，不在表单内常驻展示收款信息 */
+  const closePaymentModal = useCallback(() => {
+    setPaymentModalOpen(false);
+    setAddressRevealed(false);
+  }, []);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -179,8 +230,15 @@ export function ApplicationForm({ session }: { session: Session }) {
                 合约地址 (CA)
               </span>
               <span className="ml-2 text-xs text-slate-500">
-                （请确保合约已开源且无高危代码）
+                （请确保合约无高危代码或权限）
               </span>
+              <button
+                type="button"
+                onClick={() => setRiskHelpOpen(true)}
+                className="ml-2 text-xs text-emerald-700 underline decoration-dotted underline-offset-2 hover:text-emerald-600"
+              >
+                何为高危代码？
+              </button>
               <input
                 required
                 value={contractAddress}
@@ -330,18 +388,33 @@ export function ApplicationForm({ session }: { session: Session }) {
             第三部分：支付信息（自助结算）
           </h2>
           <p className="mt-4 text-sm text-slate-600">
-            请将对应费用汇入以下官方指定收款地址。请务必确认地址准确，转账金额需与所选方案一致。
+            请将对应费用转入官方生成的收款地址。
+            <span className="font-semibold text-red-600">
+              为防止剪贴板病毒，确认交易前请务必核对收款地址首尾数字
+            </span>
+            ，确认地址准确，转账金额需与所选方案一致。
           </p>
-          <dl className="mt-4 space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4 font-mono text-sm">
-            <div>
-              <dt className="text-slate-500">收款网络</dt>
-              <dd className="text-emerald-700">BEP20 (BSC) 或 ERC20</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">收款地址</dt>
-              <dd className="break-all text-slate-900">{PAYMENT_ADDRESS}</dd>
-            </div>
-          </dl>
+          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 p-6 text-center">
+            <p className="text-sm text-slate-600">
+              点击下方按钮生成付款信息，系统将为您准备收款地址。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (!plan) {
+                  setMessage({
+                    type: "err",
+                    text: "请先在第二部分中选择热搜服务方案（A、B 或 C），再获取收款地址。",
+                  });
+                  return;
+                }
+                setPaymentModalOpen(true);
+              }}
+              className="mt-4 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+            >
+              获取收款地址
+            </button>
+          </div>
         </section>
 
         {/* Part 4 */}
@@ -423,6 +496,202 @@ export function ApplicationForm({ session }: { session: Session }) {
           温馨提示：提交后系统将在 30–60 分钟内完成链上确认并安排排期。如因合约安全问题（如蜜罐等）未通过审核，款项将按原路退回。
         </p>
       </form>
+
+      {paymentModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="payment-modal-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
+            {paymentPhase !== "done" ? (
+              <div className="flex flex-col items-center text-center">
+                {/* 两阶段进度：进入第 2 步时连线与配色一起变，过渡更明显 */}
+                <div className="mb-6 w-full max-w-xs">
+                  <div className="flex items-start justify-between gap-1">
+                    <div
+                      className={`flex flex-1 flex-col items-center transition-all duration-300 ${
+                        paymentPhase === "link"
+                          ? "scale-105"
+                          : "scale-100 opacity-90"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 ${
+                          paymentPhase === "link"
+                            ? "border-2 border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm ring-2 ring-emerald-200"
+                            : "border-2 border-emerald-600 bg-emerald-600 text-white"
+                        }`}
+                      >
+                        {paymentPhase === "address" ? "✓" : "1"}
+                      </span>
+                      <span className="mt-1.5 max-w-[4.5rem] text-center text-[11px] font-medium leading-tight text-slate-600">
+                        付款链接
+                      </span>
+                    </div>
+
+                    <div className="relative mx-1 mt-[17px] h-1 min-w-0 flex-[1.2] rounded-full bg-slate-200">
+                      <div
+                        className={`absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700 ease-out ${
+                          paymentPhase === "address" ? "w-full" : "w-0"
+                        }`}
+                      />
+                    </div>
+
+                    <div
+                      className={`flex flex-1 flex-col items-center transition-all duration-300 ${
+                        paymentPhase === "address"
+                          ? "scale-105"
+                          : "scale-100 opacity-55"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 ${
+                          paymentPhase === "address"
+                            ? "border-2 border-amber-600 bg-amber-50 text-amber-900 shadow-sm ring-2 ring-amber-200"
+                            : "border-2 border-slate-300 bg-white text-slate-400"
+                        }`}
+                      >
+                        2
+                      </span>
+                      <span className="mt-1.5 max-w-[4.5rem] text-center text-[11px] font-medium leading-tight text-slate-600">
+                        付款地址
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div key={paymentPhase} className="payment-phase-swap flex flex-col items-center">
+                  <span
+                    className={`inline-block h-10 w-10 animate-spin rounded-full border-2 border-t-transparent transition-colors duration-300 ${
+                      paymentPhase === "link"
+                        ? "border-emerald-600"
+                        : "border-amber-600"
+                    }`}
+                    aria-hidden
+                  />
+                  <p id="payment-modal-title" className="mt-5 text-base font-semibold text-slate-900">
+                    {paymentPhase === "link"
+                      ? "正在生成付款链接"
+                      : "正在生成付款地址"}
+                  </p>
+                  <p
+                    className={`mt-1 text-sm transition-colors duration-300 ${
+                      paymentPhase === "link" ? "text-emerald-700" : "text-amber-800"
+                    }`}
+                  >
+                    {paymentPhase === "link"
+                      ? "第 1 步：建立安全付款通道…"
+                      : "第 2 步：为您分配链上收款地址…"}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">请稍候…</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  className="mt-6 text-xs text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+                >
+                  取消
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <h2 id="payment-modal-title" className="sr-only">
+                  收款地址已生成
+                </h2>
+                <p className="break-all rounded-lg border border-slate-100 bg-slate-50 px-3 py-4 font-mono text-sm leading-relaxed text-slate-900">
+                  {PAYMENT_ADDRESS}
+                </p>
+                <p className="mt-3 text-center text-xs text-emerald-800">
+                  收款网络：BEP20 (BSC) 或 ERC20
+                </p>
+                {plan ? (
+                  <p className="mt-3 text-center text-sm text-slate-800">
+                    转账金额（请按所选方案足额转入）：
+                    <span className="ml-1 font-semibold tabular-nums text-amber-700">
+                      {PLAN_TRANSFER_AMOUNT[plan]}
+                    </span>
+                  </p>
+                ) : null}
+                <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                  <button
+                    type="button"
+                    onClick={copyPaymentAddress}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+                  >
+                    {copied ? "已复制" : "复制地址"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closePaymentModal}
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    关闭
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {riskHelpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-lg font-semibold text-slate-900">高危代码/权限说明</h3>
+              <button
+                type="button"
+                onClick={() => setRiskHelpOpen(false)}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              >
+                关闭
+              </button>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              高危代码通常指：项目方可单方面冻结、限制、增发、修改税率或转移用户资产的逻辑，可能导致用户无法卖出或资产价值被稀释。
+            </p>
+            <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-4 text-sm">
+              <p className="font-medium text-slate-800">常见风险函数/权限点（示例）</p>
+              <ul className="mt-2 list-inside list-disc space-y-1.5 text-slate-600">
+                <li>
+                  <span className="font-mono text-slate-800">blacklist(address,bool)</span>、
+                  <span className="font-mono text-slate-800"> setBlacklist</span>：可拉黑地址，导致无法转账/卖出
+                </li>
+                <li>
+                  <span className="font-mono text-slate-800">pause()</span>、
+                  <span className="font-mono text-slate-800"> setTradingEnabled(bool)</span>：可随时暂停交易
+                </li>
+                <li>
+                  <span className="font-mono text-slate-800">mint(address,uint256)</span>：可增发代币，造成稀释风险
+                </li>
+                <li>
+                  <span className="font-mono text-slate-800">setTaxFee(uint256)</span>、
+                  <span className="font-mono text-slate-800"> setSellFee</span>：可随意上调买卖税
+                </li>
+                <li>
+                  <span className="font-mono text-slate-800">setRouter</span>、
+                  <span className="font-mono text-slate-800"> setPair</span>：可修改交易路由/交易对
+                </li>
+                <li>
+                  <span className="font-mono text-slate-800">withdrawToken</span>、
+                  <span className="font-mono text-slate-800"> rescueToken</span>、
+                  <span className="font-mono text-slate-800"> transferOwnership</span>：
+                  高权限可提走资金或转移控制权
+                </li>
+              </ul>
+            </div>
+            <p className="mt-4 text-xs text-slate-500">
+              注：以上为常见模式，不同项目命名不同，建议结合审计报告和源码逐项验证。
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
